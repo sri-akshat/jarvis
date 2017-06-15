@@ -1,0 +1,25 @@
+{
+  "name": "jarvis",
+  "version": "1.0.0",
+  "description": "Chatty slack bot",
+  "main": "ComboBoxMixinTest.js",
+  "config": {
+    "SLACK_BOT_TOKEN": "",
+    "APIAI_AGENT_TOKEN": ""
+  },
+  "scripts": {
+    "post": "node skills/postMessage.js",
+    "recieve": "node skills/recieveMessage.js",
+    "reply": "node skills/reply.js"
+  },
+  "author": "Akshat Srivastava",
+  "license": "ISC",
+  "dependencies": {
+    "@slack/client": "^3.10.0",
+    "apiai": "^4.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sri-akshat/jarvis.git"
+  }
+}
