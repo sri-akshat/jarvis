@@ -1,0 +1,16 @@
+# Virtual environments & caches
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Editors / OS artifacts
+.DS_Store
+
+# Runtime outputs
+.coverage
+data/
+embeddings_vectors.npy
+
+# Local config
+*.sqlite
+*.db
