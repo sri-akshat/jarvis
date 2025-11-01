@@ -1,6 +1,13 @@
 """CLI entry point for ingesting Gmail messages into a data store."""
 from __future__ import annotations
 
+try:  # pragma: no cover - import fallback for script execution
+    from cli._bootstrap import ensure_project_root
+except ModuleNotFoundError:  # pragma: no cover
+    from _bootstrap import ensure_project_root
+
+ensure_project_root()
+
 import argparse
 import logging
 from pathlib import Path
@@ -54,8 +61,16 @@ def main() -> None:
     )
     datastore = SQLiteDataStore(config.database_path)
     logger.info("Fetching Gmail messages for query '%s'", args.query)
-    ingest_messages(service, datastore, args.query)
-    logger.info("Ingestion complete for query '%s'", args.query)
+    message_count, attachment_count, task_count = ingest_messages(
+        service, datastore, args.query
+    )
+    logger.info(
+        "Ingestion complete for query '%s': %s message(s), %s attachment(s), %s task(s) queued.",
+        args.query,
+        message_count,
+        attachment_count,
+        task_count,
+    )
 
 
 if __name__ == "__main__":

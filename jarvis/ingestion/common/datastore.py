@@ -12,7 +12,7 @@ from jarvis.knowledge import task_queue
 
 
 class DataStore(Protocol):
-    def save_messages(self, messages: Iterable[Message]) -> None:
+    def save_messages(self, messages: Iterable[Message]) -> tuple[int, int, int]:
         ...
 
 
@@ -146,12 +146,15 @@ class SQLiteDataStore:
             """
         )
 
-    def save_messages(self, messages: Iterable[Message]) -> None:
+    def save_messages(self, messages: Iterable[Message]) -> tuple[int, int, int]:
         pending_content_ids: list[str] = []
+        message_count = 0
+        attachment_count = 0
         with sqlite3.connect(self.database_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON;")
             self._ensure_schema(conn)
             for message in messages:
+                message_count += 1
                 conn.execute(
                     """
                     INSERT INTO messages (
@@ -183,6 +186,7 @@ class SQLiteDataStore:
                 message_content_id = self._register_message_content(conn, message)
                 pending_content_ids.append(message_content_id)
                 for attachment in message.attachments:
+                    attachment_count += 1
                     self._save_attachment(conn, message.id, attachment)
                     attachment_content_id = self._register_attachment_content(
                         conn, message.id, attachment
@@ -194,6 +198,7 @@ class SQLiteDataStore:
                 "semantic_index",
                 {"content_id": content_id},
             )
+        return message_count, attachment_count, len(pending_content_ids)
 
     @staticmethod
     def _save_attachment(

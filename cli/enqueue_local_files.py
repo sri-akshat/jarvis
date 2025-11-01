@@ -1,6 +1,13 @@
 """Scan a local directory and enqueue files for ingestion."""
 from __future__ import annotations
 
+try:  # pragma: no cover
+    from cli._bootstrap import ensure_project_root
+except ModuleNotFoundError:  # pragma: no cover
+    from _bootstrap import ensure_project_root
+
+ensure_project_root()
+
 import argparse
 import hashlib
 import json

@@ -1,5 +1,8 @@
 # Jarvis: Messaging Ingestion & Knowledge Graph
 
+[![CI](https://github.com/sri-akshat/jarvis/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sri-akshat/jarvis/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](#testing--coverage)
+
 Jarvis ingests Gmail messages (and other documents), normalises them into an SQLite datastore, extracts semantic entities, and materialises structured fact tables that are easy to query or feed into downstream LLMs. The project combines semantic search, knowledge-graph style storage, and batch/queue workers so personal data (lab reports, invoices, prescriptions, chat threads) stay grounded and queryable.
 
 ## Features
@@ -34,91 +37,157 @@ tests/                        # Pytest suite covering ingestion + knowledge laye
 .github/workflows/            # CI configuration (lint/test/coverage)
 ```
 
-## Requirements
+## Prerequisites
 
-- Python 3.9+
-- Pip packages listed in `requirements.txt` (core) and `requirements-dev.txt` (testing; requires network access to install).
-- Optional: [Ollama](https://ollama.com) or another OpenAI-compatible endpoint if using the LLM extractor.
+- Python 3.9+ with `pip`
+- Google Cloud project with Gmail API enabled and OAuth client credentials JSON
+- SQLite (ships with Python) and command-line `sqlite3` for ad-hoc inspection
+- spaCy English model (`python -m spacy download en_core_web_sm`) if you want the spaCy extractor
+- Optional local LLM backend such as [Ollama](https://ollama.com) for `--backend llm`
+- Optional Neo4j instance (Docker works great) for visualising the graph
 
-## Installation
+## Setup
 
 ```sh
+git clone https://github.com/sri-akshat/jarvis.git
+cd jarvis
+
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt  # optional but recommended for testing
+
+# Download spaCy model if not already available on the machine
+python -m spacy download en_core_web_sm
 ```
 
-For development/testing:
+Environment variables the CLIs understand:
 
-```sh
-pip install -r requirements-dev.txt
-```
+- `JARVIS_DATABASE` – default path to the SQLite datastore (fallback: `data/messages.db`)
+- `JARVIS_LOG_LEVEL` – default logging level (`INFO`, `DEBUG`, ...)
 
-## Gmail Ingestion
+> **Note** All CLI examples below assume you run them from the repository root (e.g. `python cli/fetch_gmail_messages.py ...`). The CLI module now self-configures `sys.path`, so the commands work whether you execute them as scripts or with `python -m`.
+
+## Ingestion Workflow
+
+### 1. Fetch Gmail Messages
 
 ```sh
 python cli/fetch_gmail_messages.py "subject:Meera report" --credentials /path/to/credentials.json
 ```
 
-Flags:
-- `--token`: path for the OAuth token cache (default `~/.gmail-token.json`).
-- `--database`: overrides the SQLite path (defaults to `data/messages.db` or `JARVIS_DATABASE`).
+Writes:
+- `messages`, `attachments`, `content_registry` tables
+- pending jobs in `task_queue` (one per message + attachment)
 
-## Semantic Indexing & Entity Extraction
+Verify:
+- `sqlite3 data/messages.db ".tables"`
+- `sqlite3 data/messages.db "SELECT id, subject FROM messages ORDER BY received_at DESC LIMIT 5;"`
+- `sqlite3 data/messages.db "SELECT task_type, status FROM task_queue ORDER BY created_at DESC LIMIT 5;"`
 
-```sh
-# Extract text + embeddings
-python cli/run_semantic_indexer.py --database data/messages.db
-
-# spaCy backend
-python cli/run_entity_extraction.py --database data/messages.db
-
-# LLM backend (e.g. using Ollama)
-ollama serve
-python cli/run_entity_extraction.py --backend llm --llm-model mistral --database data/messages.db
-```
-
-Environment variables:
-- `JARVIS_DATABASE`: default database path for CLIs/worker.
-- `JARVIS_LOG_LEVEL`: default log level (e.g. `DEBUG`).
-
-## Structured Facts & Queries
-
-```sh
-python cli/build_lab_results.py --database data/messages.db --extractor llm:mistral
-python cli/build_financial_records.py --database data/messages.db --extractor llm:mistral
-python cli/build_medical_events.py --database data/messages.db --extractor llm:mistral
-
-python cli/query_lab_results.py --test "hba1c" --limit 5
-python cli/query_financial_records.py --counterparty "Dezignare" --limit 5
-python cli/query_medical_events.py --event-type medication --limit 5
-```
-
-Each `build_*` command materialises structured tables (`lab_results`, `financial_records`, `medical_events`) with provenance metadata (message/attachment IDs, filenames). The `query_*` helpers surface those rows for interactive inspection.
-
-## Local File Ingestion & Worker Queue
+### 2. Register Local Files (optional)
 
 ```sh
 python cli/enqueue_local_files.py /path/to/staging --recursive
-
-ollama serve  # optional, only needed for LLM backend
-python cli/processing_worker.py --database data/messages.db --entity-backend llm --llm-model mistral
 ```
 
-The worker continuously drains `task_queue`, chaining:
-1. `semantic_index` → store text + embeddings.
-2. `entity_extract` → populate entity mentions + graph relations.
-3. `lab_results`, `financial_records`, `medical_events` → build structured tables.
+Writes:
+- `content_registry` (one row per file)
+- `local_files` metadata and `task_queue` entries (`semantic_index` tasks)
 
-Failed tasks are retried automatically (with exponential backoff); missing content is logged and skipped.
+Verify:
+- `sqlite3 data/messages.db "SELECT content_id, path FROM local_files LIMIT 5;"`
 
-## Cleanup Utilities
+### 3. Process the Queue (recommended)
 
-Remove spaCy-derived mentions and orphaned graph nodes:
+The ingestion steps above enqueue downstream tasks (`semantic_index`, `entity_extract`, and fact builders). The most consistent way to handle the pipeline is to let the worker drain the queue:
+
+```sh
+# Start Ollama only if you plan to use the LLM backend.
+ollama serve
+
+python cli/processing_worker.py \
+  --database data/messages.db \
+  --entity-backend llm \
+  --llm-model mistral
+```
+
+This daemon loops through:
+
+1. `semantic_index` → populates `attachment_texts` and `embeddings`
+2. `entity_extract` → writes to `entity_mentions`, `graph_entities`, `graph_relations`
+3. `lab_results`, `financial_records`, `medical_events` → materialises fact tables
+
+Watch the logs for progress; stop the worker with `Ctrl+C`. Use `--run-once` to process one task batch and exit.
+
+> Need to reprocess a specific stage manually? See `docs/semantic_pipeline.md` for advanced commands that bypass the worker.
+
+### 4. Query Structured Facts & Embeddings
+
+```sh
+python cli/query_lab_results.py --test "hba1c" --limit 5
+python cli/query_financial_records.py --counterparty "Dezignare" --limit 5
+python cli/query_medical_events.py --event-type medication --limit 5
+
+python cli/semantic_search.py "vitamin d levels" --top-k 3 --database data/messages.db
+```
+
+These commands read from the structured tables and `embeddings`/`attachment_texts` to provide interactive results.
+
+### 5. Cleanup (optional)
 
 ```sh
 python cli/cleanup_spacy_data.py --database data/messages.db
 ```
+
+Removes spaCy-derived mentions/relations so you can regenerate with a different backend.
+
+## Optional LLM Backend (Ollama)
+
+If you want to run entity extraction with an on-device LLM:
+
+1. Install Ollama (macOS/Linux):
+   ```sh
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+   or download the desktop app from [ollama.com](https://ollama.com/download).
+2. Pull the model you plan to use (for example):
+   ```sh
+   ollama pull mistral
+   ```
+3. Start the service before running the worker in LLM mode:
+   ```sh
+   ollama serve
+   python cli/processing_worker.py --entity-backend llm --llm-model mistral
+   ```
+
+You can point the worker at another OpenAI-compatible endpoint with `--llm-endpoint` and `--llm-timeout`.
+
+## Neo4j Visualisation
+
+Spin up Neo4j locally (using Docker):
+
+```sh
+docker run --name jarvis-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/neo4j-password \
+  -e NEO4J_PLUGINS='["apoc"]' \
+  -v neo4j_data:/data \
+  neo4j:5.18
+```
+
+Then push the SQLite knowledge graph into Neo4j:
+
+```sh
+python cli/push_neo4j.py \
+  --database data/messages.db \
+  --uri bolt://localhost:7687 \
+  --user neo4j \
+  --password neo4j-password \
+  --clear-existing
+```
+
+Open http://localhost:7474 in your browser to explore the graph visually (e.g., `MATCH (p:PATIENT)-[r:MENTIONED_IN]->(c:Content) RETURN p,r,c LIMIT 50;`).
 
 ## Testing & Coverage
 

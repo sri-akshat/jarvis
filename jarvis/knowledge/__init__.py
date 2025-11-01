@@ -9,6 +9,10 @@ from jarvis.knowledge.domains import (
     fetch_lab_results,
     fetch_medical_events,
 )
+from jarvis.knowledge.neo4j_exporter import (
+    Neo4jConnectionConfig,
+    Neo4jGraphExporter,
+)
 
 __all__ = [
     "task_queue",
@@ -18,4 +22,6 @@ __all__ = [
     "fetch_financial_records",
     "fetch_lab_results",
     "fetch_medical_events",
+    "Neo4jGraphExporter",
+    "Neo4jConnectionConfig",
 ]
