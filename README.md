@@ -1,5 +1,8 @@
 # Jarvis: Messaging Ingestion & Knowledge Graph
 
+[![CI](https://github.com/sri-akshat/jarvis/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sri-akshat/jarvis/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/badge/coverage-81%25-brightgreen.svg)](#testing--coverage)
+
 Jarvis ingests Gmail messages (and other documents), normalises them into an SQLite datastore, extracts semantic entities, and materialises structured fact tables that are easy to query or feed into downstream LLMs. The project combines semantic search, knowledge-graph style storage, and batch/queue workers so personal data (lab reports, invoices, prescriptions, chat threads) stay grounded and queryable.
 
 ## Features
@@ -119,6 +122,32 @@ Remove spaCy-derived mentions and orphaned graph nodes:
 ```sh
 python cli/cleanup_spacy_data.py --database data/messages.db
 ```
+
+## Neo4j Visualisation
+
+Spin up Neo4j locally (using Docker):
+
+```sh
+docker run --name jarvis-neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/neo4j-password \
+  -e NEO4J_PLUGINS='["apoc"]' \
+  -v neo4j_data:/data \
+  neo4j:5.18
+```
+
+Then push the SQLite knowledge graph into Neo4j:
+
+```sh
+python cli/push_neo4j.py \
+  --database data/messages.db \
+  --uri bolt://localhost:7687 \
+  --user neo4j \
+  --password neo4j-password \
+  --clear-existing
+```
+
+Open http://localhost:7474 in your browser to explore the graph visually (e.g., `MATCH (p:PATIENT)-[r:MENTIONED_IN]->(c:Content) RETURN p,r,c LIMIT 50;`).
 
 ## Testing & Coverage
 
