@@ -1,0 +1,16 @@
+[run]
+branch = True
+omit =
+    */__init__.py
+    tests/*
+    build_*.py
+    cleanup_spacy_data.py
+    enqueue_local_files.py
+    fetch_gmail_messages.py
+    processing_worker.py
+    run_entity_extraction.py
+    run_semantic_indexer.py
+    semantic_search.py
+
+[report]
+skip_empty = True
