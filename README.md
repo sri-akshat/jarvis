@@ -163,6 +163,18 @@ If you want to run entity extraction with an on-device LLM:
 
 You can point the worker at another OpenAI-compatible endpoint with `--llm-endpoint` and `--llm-timeout`.
 
+### LLM-powered payment summary (experimental)
+
+Once Neo4j contains your graph (see [Neo4j Visualisation](#neo4j-visualisation)), you can ask an on-device LLM (e.g., Mistral via Ollama) to reason over the payment mentions:
+
+```sh
+python cli/ask_finance_summary.py \
+  --counterparty "dezignare india" \
+  --neo4j-password neo4j-password
+```
+
+The script fetches all `MONEY` mentions tied to the counterparty, computes numeric totals for sanity, and asks the LLM to produce a concise explanation. Adjust `--counterparty`, `--llm-model`, or `--limit` as needed.
+
 ## Neo4j Visualisation
 
 Spin up Neo4j locally (using Docker):
