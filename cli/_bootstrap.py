@@ -18,3 +18,8 @@ def ensure_project_root() -> None:
     root_str = str(root)
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
+
+
+# Backwards compatibility for earlier scripts that imported ensure_project
+def ensure_project() -> None:  # pragma: no cover - compatibility shim
+    ensure_project_root()

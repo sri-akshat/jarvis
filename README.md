@@ -98,77 +98,43 @@ Writes:
 Verify:
 - `sqlite3 data/messages.db "SELECT content_id, path FROM local_files LIMIT 5;"`
 
-### 3. Semantic Indexing
+### 3. Process the Queue (recommended)
+
+The ingestion steps above enqueue downstream tasks (`semantic_index`, `entity_extract`, and fact builders). The most consistent way to handle the pipeline is to let the worker drain the queue:
 
 ```sh
-python cli/run_semantic_indexer.py --database data/messages.db
-```
-
-Writes:
-- `attachment_texts` (chunked plain text)
-- `embeddings` (hashed BoW vectors + metadata)
-
-Verify: `sqlite3 data/messages.db "SELECT content_id, token_count FROM attachment_texts LIMIT 5;"`
-
-### 4. Entity Extraction
-
-```sh
-# spaCy backend
-python cli/run_entity_extraction.py --database data/messages.db --backend spacy
-
-# LLM backend (requires Ollama or another OpenAI-compatible endpoint)
+# Start Ollama only if you plan to use the LLM backend.
 ollama serve
-python cli/run_entity_extraction.py --database data/messages.db --backend llm --llm-model mistral
+
+python cli/processing_worker.py \
+  --database data/messages.db \
+  --entity-backend llm \
+  --llm-model mistral
 ```
 
-Writes:
-- `entity_mentions`, `graph_entities`, `graph_relations`
+This daemon loops through:
 
-Verify: `sqlite3 data/messages.db "SELECT label, text FROM entity_mentions ORDER BY created_at DESC LIMIT 5;"`
+1. `semantic_index` → populates `attachment_texts` and `embeddings`
+2. `entity_extract` → writes to `entity_mentions`, `graph_entities`, `graph_relations`
+3. `lab_results`, `financial_records`, `medical_events` → materialises fact tables
 
-### 5. Build Domain Fact Tables
+Watch the logs for progress; stop the worker with `Ctrl+C`. Use `--run-once` to process one task batch and exit.
 
-```sh
-python cli/build_lab_results.py --database data/messages.db --extractor llm:mistral
-python cli/build_financial_records.py --database data/messages.db --extractor llm:mistral
-python cli/build_medical_events.py --database data/messages.db --extractor llm:mistral
-```
+> Need to reprocess a specific stage manually? See `docs/semantic_pipeline.md` for advanced commands that bypass the worker.
 
-Writes:
-- `lab_results`, `financial_records`, `medical_events`
-
-Verify:
-- `sqlite3 data/messages.db "SELECT test_name, measurement_value FROM lab_results LIMIT 5;"`
-- `sqlite3 data/messages.db "SELECT record_type, amount_value FROM financial_records LIMIT 5;"`
-- `sqlite3 data/messages.db "SELECT event_type, patient FROM medical_events LIMIT 5;"`
-
-### 6. Query Structured Facts
+### 4. Query Structured Facts & Embeddings
 
 ```sh
 python cli/query_lab_results.py --test "hba1c" --limit 5
 python cli/query_financial_records.py --counterparty "Dezignare" --limit 5
 python cli/query_medical_events.py --event-type medication --limit 5
-```
 
-Reads: fact tables listed above; prints rows to stdout.
-
-### 7. Semantic Search
-
-```sh
 python cli/semantic_search.py "vitamin d levels" --top-k 3 --database data/messages.db
 ```
 
-Reads: `embeddings`, `attachment_texts`.
+These commands read from the structured tables and `embeddings`/`attachment_texts` to provide interactive results.
 
-### 8. Long-running Worker (optional)
-
-```sh
-python cli/processing_worker.py --database data/messages.db --entity-backend llm --llm-model mistral
-```
-
-Continuously drains `task_queue` (`semantic_index` → `entity_extract` → fact builders). Use Ctrl+C to stop.
-
-### 9. Cleanup (optional)
+### 5. Cleanup (optional)
 
 ```sh
 python cli/cleanup_spacy_data.py --database data/messages.db
@@ -189,13 +155,13 @@ If you want to run entity extraction with an on-device LLM:
    ```sh
    ollama pull mistral
    ```
-3. Start the service before invoking the LLM backend:
+3. Start the service before running the worker in LLM mode:
    ```sh
    ollama serve
-   python cli/run_entity_extraction.py --backend llm --llm-model mistral
+   python cli/processing_worker.py --entity-backend llm --llm-model mistral
    ```
 
-You can point the CLI at another OpenAI-compatible endpoint by overriding `--llm-endpoint`/`--llm-timeout`.
+You can point the worker at another OpenAI-compatible endpoint with `--llm-endpoint` and `--llm-timeout`.
 
 ## Neo4j Visualisation
 

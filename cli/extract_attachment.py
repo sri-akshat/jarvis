@@ -1,7 +1,10 @@
 """CLI helper to export attachments from the messaging SQLite datastore."""
 from __future__ import annotations
 
-from cli._bootstrap import ensure_project_root
+try:  # pragma: no cover
+    from cli._bootstrap import ensure_project_root
+except ModuleNotFoundError:  # pragma: no cover
+    from _bootstrap import ensure_project_root
 
 ensure_project_root()
 

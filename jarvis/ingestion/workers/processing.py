@@ -123,6 +123,7 @@ def handle_semantic_task(indexer: SemanticIndexer, payload: dict, database: str)
     content_id = payload.get("content_id")
     if not content_id:
         raise ValueError("semantic_index task missing content_id")
+    logger.info("[semantic_index] Processing %s", content_id)
     processed = indexer.process_content_id(content_id)
     if not processed:
         logger.info("[semantic_index] Skipped %s: no content available", content_id)
@@ -146,6 +147,7 @@ def handle_entity_task(
     content_id = payload.get("content_id")
     if not content_id:
         raise ValueError("entity_extract task missing content_id")
+    logger.info("[entity_extract] Processing %s via %s", content_id, extractor_name)
     processed = builder.run(content_id=content_id)
     if processed:
         task_queue.enqueue_task(
@@ -169,21 +171,35 @@ def handle_lab_task(builder: LabFactBuilder, payload: dict) -> None:
     extractor = payload.get("extractor", builder.extractor)
     content_id = payload.get("content_id")
     builder.extractor = extractor
-    builder.run(content_id=content_id)
+    logger.info("[lab_results] Building facts for %s (extractor=%s)", content_id, extractor)
+    produced = builder.run(content_id=content_id)
+    logger.info("[lab_results] Produced %s row(s) for %s", produced, content_id)
 
 
 def handle_financial_task(builder: FinancialFactBuilder, payload: dict) -> None:
     extractor = payload.get("extractor", builder.extractor)
     content_id = payload.get("content_id")
     builder.extractor = extractor
-    builder.run(content_id=content_id)
+    logger.info(
+        "[financial_records] Building facts for %s (extractor=%s)",
+        content_id,
+        extractor,
+    )
+    produced = builder.run(content_id=content_id)
+    logger.info("[financial_records] Produced %s row(s) for %s", produced, content_id)
 
 
 def handle_medical_task(builder: MedicalFactBuilder, payload: dict) -> None:
     extractor = payload.get("extractor", builder.extractor)
     content_id = payload.get("content_id")
     builder.extractor = extractor
-    builder.run(content_id=content_id)
+    logger.info(
+        "[medical_events] Building facts for %s (extractor=%s)",
+        content_id,
+        extractor,
+    )
+    produced = builder.run(content_id=content_id)
+    logger.info("[medical_events] Produced %s row(s) for %s", produced, content_id)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -202,6 +218,12 @@ def run(args: argparse.Namespace) -> None:
                 break
             time.sleep(args.poll_interval)
             continue
+        logger.info(
+            "Picked task %s (%s) with payload %s",
+            task.task_id,
+            task.task_type,
+            task.payload,
+        )
         try:
             if task.task_type == "semantic_index":
                 handle_semantic_task(indexer, task.payload, db_path)
@@ -231,6 +253,7 @@ def run(args: argparse.Namespace) -> None:
             )
         else:
             task_queue.complete_task(db_path, task.task_id)
+            logger.info("Completed task %s (%s)", task.task_id, task.task_type)
         if args.run_once:
             break
 
