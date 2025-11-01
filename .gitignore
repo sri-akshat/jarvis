@@ -2,15 +2,40 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
 
 # Editors / OS artifacts
 .DS_Store
+.idea/
+.vscode/
 
 # Runtime outputs
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
 data/
 embeddings_vectors.npy
+*.log
 
 # Local config
+*.env
+*.env.*
+.python-version
+
+# Python build artifacts
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Misc
+node_modules/
+
+# Databases
 *.sqlite
 *.db
