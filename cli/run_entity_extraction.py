@@ -1,6 +1,10 @@
 """CLI entry point for entity extraction and knowledge graph updates."""
 from __future__ import annotations
 
+from cli._bootstrap import ensure_project_root
+
+ensure_project_root()
+
 import argparse
 import logging
 

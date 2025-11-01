@@ -1,6 +1,10 @@
 """Push the SQLite-backed knowledge graph into Neo4j."""
 from __future__ import annotations
 
+from cli._bootstrap import ensure_project_root
+
+ensure_project_root()
+
 import argparse
 import getpass
 import logging
