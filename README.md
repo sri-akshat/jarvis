@@ -175,6 +175,18 @@ python cli/ask_finance_summary.py \
 
 The script fetches all `MONEY` mentions tied to the counterparty, computes numeric totals for sanity, and asks the LLM to produce a concise explanation. Adjust `--counterparty`, `--llm-model`, or `--limit` as needed.
 
+### General agent (experimental)
+
+An interactive agent can automatically select tools (finance, medical, etc.) and use Mistral to craft an answer:
+
+```sh
+python cli/agent_query.py \
+  "How much have I paid Dezignare India?" \
+  --neo4j-password neo4j-password
+```
+
+The agent evaluates the question, invokes the relevant tool(s), and feeds the structured output back to the LLM before responding. Use `--llm-model`, `--max-loops`, or custom defaults to tune behaviour.
+
 ## Neo4j Visualisation
 
 Spin up Neo4j locally (using Docker):

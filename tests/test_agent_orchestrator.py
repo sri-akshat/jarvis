@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import json
+from typing import Dict
+
+from jarvis.agent.base import ToolContext, ToolExecutor, ToolResult, ToolSpec, ToolParameter
+from jarvis.agent.orchestrator import OrchestratorConfig, ToolOrchestrator
+
+
+class StubLLMClient:
+    def __init__(self, responses: Dict[int, str]):
+        self.responses = responses
+        self.calls = 0
+
+    def chat(self, prompt: str) -> str:
+        response = self.responses.get(self.calls)
+        if response is None:
+            raise AssertionError(f"No stub response for call {self.calls}")
+        self.calls += 1
+        return response
+
+
+def test_orchestrator_executes_tool_and_returns_answer():
+    def handler(context: ToolContext, params: Dict[str, str]) -> ToolResult:
+        return ToolResult.success_result({"echo": params.get("value")})
+
+    spec = ToolSpec(
+        name="echo",
+        description="Return the provided value.",
+        parameters=[ToolParameter(name="value", description="Value to echo")],
+        handler=handler,
+    )
+    registry = {spec.name: spec}
+    context = ToolContext(database_path="/tmp/test.db")
+    executor = ToolExecutor(context, registry)
+    llm = StubLLMClient(
+        {
+            0: json.dumps({"action": "call_tool", "tool": "echo", "params": {"value": "hello"}}),
+            1: json.dumps({"action": "final", "answer": "Echoed hello"}),
+        }
+    )
+    orchestrator = ToolOrchestrator(registry, executor, llm, OrchestratorConfig(max_loops=2))
+    response = orchestrator.run("Say hello")
+    assert response.answer == "Echoed hello"
+    assert len(response.tool_calls) == 1
+    call = response.tool_calls[0]
+    assert call.tool == "echo"
+    assert call.result.success
+    assert call.result.data == {"echo": "hello"}
