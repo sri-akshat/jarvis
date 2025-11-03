@@ -56,6 +56,18 @@ class ToolOrchestrator:
                 break
             tool_name = action.get("tool")
             params = action.get("params", {})
+            if tool_name not in self.specs:
+                warning = (
+                    f"Tool '{tool_name}' is not available. Available tools: {', '.join(self.specs)}."
+                )
+                logger.warning(warning)
+                result = ToolResult.failure_result(warning)
+                transcript.append(ToolCallRecord(tool=tool_name, params=params, result=result))
+                answer = (
+                    f"I cannot use the tool '{tool_name}'. "
+                    f"Please ask using one of: {', '.join(self.specs)}."
+                )
+                return AgentResponse(answer=answer, tool_calls=transcript)
             result = self.executor.execute(tool_name, params)
             record = ToolCallRecord(tool=tool_name, params=params, result=result)
             transcript.append(record)
@@ -75,6 +87,21 @@ class ToolOrchestrator:
                 if iteration == self.config.max_loops - 1:
                     logger.info("Reached max tool iterations. Returning best effort answer.")
                     break
+                next_tool = decision.get("tool")
+                if next_tool and next_tool not in self.specs:
+                    warning = (
+                        f"Tool '{next_tool}' is not available. Available tools: {', '.join(self.specs)}."
+                    )
+                    logger.warning(warning)
+                    result = ToolResult.failure_result(warning)
+                    transcript.append(
+                        ToolCallRecord(tool=next_tool, params=decision.get("params", {}), result=result)
+                    )
+                    answer = (
+                        f"I cannot use the tool '{next_tool}'. "
+                        f"Please ask using one of: {', '.join(self.specs)}."
+                    )
+                    return AgentResponse(answer=answer, tool_calls=transcript)
                 pending_action = decision
                 continue
         return AgentResponse(answer="Unable to produce an answer.", tool_calls=transcript)
