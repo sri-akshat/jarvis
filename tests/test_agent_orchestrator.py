@@ -72,3 +72,25 @@ def test_orchestrator_parses_colon_format():
     response = orchestrator.run("Say hi")
     assert response.answer == "done"
     assert len(response.tool_calls) == 1
+
+
+def test_orchestrator_handles_unknown_tool():
+    spec = ToolSpec(
+        name="echo",
+        description="Return the provided value.",
+        parameters=[ToolParameter(name="value", description="Value to echo")],
+        handler=lambda ctx, params: ToolResult.success_result({"echo": params.get("value")}),
+    )
+    registry = {spec.name: spec}
+    context = ToolContext(database_path="/tmp/test.db")
+    executor = ToolExecutor(context, registry)
+    llm = StubLLMClient(
+        {
+            0: "Action: call_tool\nTool: non_existent\nParams: {}",
+        }
+    )
+    orchestrator = ToolOrchestrator(registry, executor, llm, OrchestratorConfig(max_loops=1))
+    response = orchestrator.run("Do something")
+    assert "non_existent" in response.answer
+    assert len(response.tool_calls) == 1
+    assert not response.tool_calls[0].result.success

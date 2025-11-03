@@ -164,7 +164,12 @@ class ToolOrchestrator:
                 key = key.strip().lower()
                 value = value.strip()
                 if key:
-                    kv_pairs[key] = value
+                    if key.startswith("next tool"):
+                        kv_pairs["tool"] = value
+                    elif key.startswith("tool requested"):
+                        kv_pairs["tool"] = value
+                    else:
+                        kv_pairs[key] = value
             if not kv_pairs:
                 return None
             action = kv_pairs.get("action")
