@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from jarvis.knowledge.semantic_indexer import ContentRecord, SemanticIndexer
+from jarvis.knowledge.semantic_indexer import ContentRecord, SemanticIndexer, SimpleEmbeddingGenerator
+from jarvis.knowledge.retriever import SemanticRetriever
 from jarvis.ingestion.common.datastore import SQLiteDataStore
 
 
@@ -133,3 +134,37 @@ def test_semantic_indexer_extracts_pdf_binary(tmp_path, db_path):
     indexer = SemanticIndexer(str(db_path))
     texts = indexer._extract_text(record)
     assert texts == [""]
+
+
+def test_semantic_retriever_handles_non_json_metadata(tmp_path, db_path):
+    SQLiteDataStore(db_path)
+    generator = SimpleEmbeddingGenerator()
+    text = "Serum creatinine value 1.0 mg/dL"
+    vector = generator.embed(text)
+    metadata = "{'filename': 'report.pdf', 'subject': 'Lab'}"  # legacy non-JSON format
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO attachment_texts (content_id, page, chunk_index, text, token_count, sha256)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            ("message:1", 0, 0, text, len(text.split()), "hash"),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO embeddings (embedding_id, content_id, chunk_index, model, dimensions, vector, created_at, metadata)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "message:1:0:hashed-bow-128",
+                "message:1",
+                0,
+                generator.model_name,
+                generator.dimensions,
+                vector.tobytes(),
+                "2025-01-01T00:00:00Z",
+                metadata,
+            ),
+        )
+
+    retriever = SemanticRetriever(str(db_path))
+    results = retriever.search("creatinine", top_k=1)
+    assert len(results) == 1
+    assert results[0].attachment_filename is None  # metadata could not be parsed
+    assert "creatinine" in results[0].text.lower()
