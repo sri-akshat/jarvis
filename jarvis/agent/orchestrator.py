@@ -122,12 +122,41 @@ class ToolOrchestrator:
             return json.loads(text)
         except json.JSONDecodeError:
             match = _JSON_PATTERN.search(text)
-            if not match:
+            if match:
+                try:
+                    candidate = json.loads(match.group(0))
+                    if isinstance(candidate, dict) and candidate.get("action"):
+                        return candidate
+                except json.JSONDecodeError:
+                    pass
+            kv_pairs: Dict[str, str] = {}
+            for line in text.splitlines():
+                if ":" not in line:
+                    continue
+                key, _, value = line.partition(":")
+                key = key.strip().lower()
+                value = value.strip()
+                if key:
+                    kv_pairs[key] = value
+            if not kv_pairs:
                 return None
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
+            action = kv_pairs.get("action")
+            if not action:
                 return None
+            result: Dict[str, Any] = {"action": action.strip().lower()}
+            if result["action"] == "call_tool":
+                tool = kv_pairs.get("tool")
+                if not tool:
+                    return None
+                result["tool"] = tool.strip()
+                params_text = kv_pairs.get("params", "{}")
+                try:
+                    result["params"] = json.loads(params_text)
+                except json.JSONDecodeError:
+                    result["params"] = {}
+            elif result["action"] == "final":
+                result["answer"] = kv_pairs.get("answer", "")
+            return result
 
     @staticmethod
     def _format_history(transcript: List[ToolCallRecord]) -> str:

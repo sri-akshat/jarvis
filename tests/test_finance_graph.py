@@ -12,6 +12,7 @@ import pytest
 
 from jarvis.agent.base import ToolContext
 from jarvis.agent.tools.finance import finance_payments_tool
+from jarvis.agent.tools.lab import lab_results_tool
 from jarvis.agent.tools.medical import medical_events_tool
 from jarvis.knowledge.finance_graph import (
     PaymentMention,
@@ -151,3 +152,72 @@ def test_medical_tool_reads_events(tmp_path: Path):
     events = result.data["events"]
     assert len(events) == 1
     assert events[0]["description"] == "Metformin"
+
+
+def test_lab_tool_reads_results(tmp_path: Path):
+    db_path = tmp_path / "lab.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE lab_results (
+                result_id TEXT,
+                extractor TEXT,
+                test_entity_id TEXT,
+                measurement_entity_id TEXT,
+                reference_entity_id TEXT,
+                test_name TEXT,
+                measurement_text TEXT,
+                measurement_value REAL,
+                measurement_units TEXT,
+                reference_range TEXT,
+                date_raw TEXT,
+                date_parsed TEXT,
+                patient TEXT,
+                message_id TEXT,
+                attachment_id TEXT,
+                content_id TEXT,
+                chunk_index INTEGER,
+                metadata TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        metadata = json.dumps({"subject": "Lab report", "filename": "lab.pdf"})
+        conn.execute(
+            """
+            INSERT INTO lab_results (
+                result_id, extractor, test_entity_id, measurement_entity_id, reference_entity_id,
+                test_name, measurement_text, measurement_value, measurement_units, reference_range,
+                date_raw, date_parsed, patient, message_id, attachment_id, content_id, chunk_index,
+                metadata, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "res1",
+                "llm:mistral",
+                "LAB_TEST:creatinine",
+                "MEASUREMENT:1",
+                None,
+                "Serum Creatinine",
+                "1.2 mg/dL",
+                1.2,
+                "mg/dL",
+                "0.5-1.3",
+                "2024-01-01",
+                "2024-01-01",
+                "Meera",
+                "msg-1",
+                "att-1",
+                "content-1",
+                0,
+                metadata,
+                "2025-01-01T00:00:00Z",
+            ),
+        )
+
+    context = ToolContext(database_path=str(db_path))
+    result = lab_results_tool(context, {"patient": "Meera", "test": "creatinine"})
+    assert result.success
+    results = result.data["results"]
+    assert len(results) == 1
+    assert results[0]["value_numeric"] == 1.2

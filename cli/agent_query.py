@@ -53,7 +53,10 @@ def main() -> None:
     context = ToolContext(
         database_path=str(config.database_path),
         neo4j_config=neo4j_config,
-        defaults={"medical_extractor": "llm:mistral"},
+        defaults={
+            "medical_extractor": "llm:mistral",
+            "lab_extractor": "llm:mistral",
+        },
     )
     executor = ToolExecutor(context, registry)
     llm_client = MistralLLMClient(model=args.llm_model, endpoint=args.llm_endpoint, timeout=args.llm_timeout)

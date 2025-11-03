@@ -47,3 +47,28 @@ def test_orchestrator_executes_tool_and_returns_answer():
     assert call.tool == "echo"
     assert call.result.success
     assert call.result.data == {"echo": "hello"}
+
+
+def test_orchestrator_parses_colon_format():
+    def handler(context: ToolContext, params: Dict[str, str]) -> ToolResult:
+        return ToolResult.success_result({"echo": params.get("value")})
+
+    spec = ToolSpec(
+        name="echo",
+        description="Return the provided value.",
+        parameters=[ToolParameter(name="value", description="Value to echo")],
+        handler=handler,
+    )
+    registry = {spec.name: spec}
+    context = ToolContext(database_path="/tmp/test.db")
+    executor = ToolExecutor(context, registry)
+    llm = StubLLMClient(
+        {
+            0: "Action: call_tool\nTool: echo\nParams: {\"value\": \"hi\"}",
+            1: "Action: final\nAnswer: done",
+        }
+    )
+    orchestrator = ToolOrchestrator(registry, executor, llm, OrchestratorConfig(max_loops=2))
+    response = orchestrator.run("Say hi")
+    assert response.answer == "done"
+    assert len(response.tool_calls) == 1
