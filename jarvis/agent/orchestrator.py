@@ -33,13 +33,15 @@ class ToolOrchestrator:
         self.llm_client = llm_client
         self.config = config or OrchestratorConfig()
 
-    def run(self, question: str) -> AgentResponse:
+    def run(self, question: str, chat_history: List[tuple[str, str]] | None = None) -> AgentResponse:
         transcript: List[ToolCallRecord] = []
         pending_action: Dict[str, Any] | None = None
         for iteration in range(self.config.max_loops):
             if pending_action is None:
-                planner_payload = self._build_planner_prompt(question, transcript)
+                planner_payload = self._build_planner_prompt(question, transcript, chat_history)
                 raw_response = self.llm_client.chat(planner_payload)
+                logger.debug("Planner prompt:\n%s", planner_payload)
+                logger.debug("Planner response: %s", raw_response)
                 action = self._parse_json(raw_response)
             else:
                 action = pending_action
@@ -74,8 +76,10 @@ class ToolOrchestrator:
             if not result.success:
                 logger.info("Tool %s failed: %s", tool_name, result.error)
             # Ask LLM to produce final answer or decide next tool
-            feedback_prompt = self._build_feedback_prompt(question, transcript)
+            feedback_prompt = self._build_feedback_prompt(question, transcript, chat_history)
             feedback_response = self.llm_client.chat(feedback_prompt)
+            logger.debug("Feedback prompt:\n%s", feedback_prompt)
+            logger.debug("Feedback response: %s", feedback_response)
             decision = self._parse_json(feedback_response)
             if not decision:
                 logger.warning("Feedback response not parseable: %s", feedback_response)
@@ -117,27 +121,43 @@ class ToolOrchestrator:
             lines.append(f"* {spec.name}: {spec.description}\n{params_block}")
         return "\n".join(lines)
 
-    def _build_planner_prompt(self, question: str, transcript: List[ToolCallRecord]) -> str:
+    def _build_planner_prompt(
+        self,
+        question: str,
+        transcript: List[ToolCallRecord],
+        chat_history: List[tuple[str, str]] | None,
+    ) -> str:
         tool_listing = self._build_tool_listing()
         history = self._format_history(transcript)
+        conversation = self._format_chat_history(chat_history)
         return (
             "You are Jarvis, an assistant that can decide whether to call tools.\n"
             "Available tools:\n"
             f"{tool_listing}\n\n"
             "Respond strictly in JSON with keys: 'action'. If action is 'call_tool', include 'tool' and 'params'.\n"
             "If action is 'final', include 'answer'.\n\n"
+            "You must only use tools that appear in the list above. If none apply, respond with action 'final'.\n\n"
+            f"Conversation (most recent last):\n{conversation}\n\n"
             f"Conversation history:\n{history}\n"
             f"User question: {question}\n"
             "Decide the next step."
         )
 
-    def _build_feedback_prompt(self, question: str, transcript: List[ToolCallRecord]) -> str:
+    def _build_feedback_prompt(
+        self,
+        question: str,
+        transcript: List[ToolCallRecord],
+        chat_history: List[tuple[str, str]] | None,
+    ) -> str:
         history = self._format_history(transcript)
+        conversation = self._format_chat_history(chat_history)
         return (
             "You called a tool and received the output shown below.\n"
             "If the output is sufficient to answer the user question, respond with action 'final' and provide the answer.\n"
             "Otherwise respond with action 'call_tool' and specify the next tool and parameters.\n"
             "Remember to use valid JSON.\n\n"
+            "Only call tools that exist in the earlier tool list. If no listed tool applies, respond with action 'final' and explain the limitation.\n\n"
+            f"Conversation (most recent last):\n{conversation}\n\n"
             f"History:\n{history}\n"
             f"User question: {question}"
         )
@@ -202,4 +222,14 @@ class ToolOrchestrator:
             lines.append(
                 f"Result: {json.dumps(record.result.to_dict(), ensure_ascii=False)}"
             )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_chat_history(chat_history: List[tuple[str, str]] | None) -> str:
+        if not chat_history:
+            return "(no prior turns)"
+        lines: List[str] = []
+        for user, agent in chat_history[-5:]:  # limit context for brevity
+            lines.append(f"User: {user}")
+            lines.append(f"Agent: {agent}")
         return "\n".join(lines)

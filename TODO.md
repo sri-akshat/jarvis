@@ -20,3 +20,5 @@
 - [ ] Migrate optional storage to Postgres/Neo4j once dataset outgrows SQLite; provide migration scripts.
 - [ ] Add data retention/cleanup tooling for embeddings and processed content.
 - [ ] Prepare deployment scripts/container (worker + scheduler) for continuous ingestion.
+- [ ] Explore integrating a safe Python execution tool for agent scratchpad computations.
+- [ ] Evaluate UI DSL / schema approaches for dynamic responses (e.g., leveraging existing frameworks/grpc/React Flow) and prototype trend visualisations.

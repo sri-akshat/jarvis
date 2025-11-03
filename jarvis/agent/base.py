@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from jarvis.knowledge.neo4j_exporter import Neo4jConnectionConfig
 
 
 ToolHandler = Callable[[ "ToolContext", Dict[str, Any]], "ToolResult"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,6 +76,10 @@ class ToolExecutor:
         if spec is None:
             return ToolResult.failure_result(f"Unknown tool '{tool_name}'")
         try:
-            return spec.handler(self.context, params or {})
+            logger.debug("Executing tool %s with params %s", tool_name, params)
+            result = spec.handler(self.context, params or {})
+            logger.debug("Tool %s success=%s", tool_name, result.success)
+            return result
         except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Tool %s raised error", tool_name)
             return ToolResult.failure_result(f"{type(exc).__name__}: {exc}")

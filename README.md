@@ -187,6 +187,14 @@ python cli/agent_query.py \
 
 The agent evaluates the question, invokes the relevant tool(s), and feeds the structured output back to the LLM before responding. Use `--llm-model`, `--max-loops`, or custom defaults to tune behaviour.
 
+Semantic search is also exposed as a tool. For exploratory queries start the interactive session:
+
+```sh
+python cli/agent_query.py --interactive --neo4j-password neo4j-password
+```
+
+Ask follow-up questions (`exit` to quit). The agent will try structured tools first and fall back to semantic search when appropriate.
+
 ## Neo4j Visualisation
 
 Spin up Neo4j locally (using Docker):

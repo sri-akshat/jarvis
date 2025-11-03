@@ -14,6 +14,7 @@ from jarvis.agent.base import ToolContext
 from jarvis.agent.tools.finance import finance_payments_tool
 from jarvis.agent.tools.lab import lab_results_tool
 from jarvis.agent.tools.medical import medical_events_tool
+from jarvis.agent.tools.semantic import semantic_search_tool
 from jarvis.knowledge.finance_graph import (
     PaymentMention,
     _normalise_currency,
@@ -221,3 +222,33 @@ def test_lab_tool_reads_results(tmp_path: Path):
     results = result.data["results"]
     assert len(results) == 1
     assert results[0]["value_numeric"] == 1.2
+
+
+def test_semantic_tool_returns_matches(monkeypatch):
+    class StubResult:
+        def __init__(self):
+            self.score = 0.9
+            self.content_id = "message:1:0"
+            self.text = "Serum creatinine is 1.0 mg/dL"
+            self.page = 0
+            self.attachment_filename = "report.pdf"
+            self.subject = "Lab report"
+
+    class StubRetriever:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def search(self, query: str, top_k: int = 5):
+            assert query == "creatinine"
+            assert top_k == 3
+            return [StubResult()]
+
+    monkeypatch.setattr(
+        "jarvis.agent.tools.semantic.SemanticRetriever",
+        StubRetriever,
+    )
+    context = ToolContext(database_path="/tmp/dummy.db")
+    result = semantic_search_tool(context, {"query": "creatinine", "top_k": 3})
+    assert result.success
+    assert result.data["query"] == "creatinine"
+    assert len(result.data["results"]) == 1
