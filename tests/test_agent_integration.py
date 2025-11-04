@@ -18,8 +18,8 @@ def _ensure_mistral_available(endpoint: str) -> None:
     try:
         response = requests.post(
             endpoint,
-            json={"model": "mistral:latest", "prompt": "ping", "stream": False},
-            timeout=5,
+            json={"model": os.getenv("MISTRAL_MODEL", "mistral:latest"), "prompt": "hi", "stream": False},
+            timeout=10,
         )
         if response.status_code >= 500:
             pytest.skip(f"Mistral endpoint unhealthy: {response.status_code}")
@@ -31,7 +31,6 @@ def _ensure_mistral_available(endpoint: str) -> None:
     not os.getenv("RUN_MISTRAL_TESTS"),
     reason="Set RUN_MISTRAL_TESTS=1 to run integration tests that call the local LLM.",
 )
-@pytest.mark.xfail(reason="LLM does not consistently fall back to semantic search yet.")
 def test_agent_falls_back_to_semantic_search(tmp_path: Path, monkeypatch):
     endpoint = os.getenv("MISTRAL_ENDPOINT", "http://localhost:11434/api/generate")
     model = os.getenv("MISTRAL_MODEL", "mistral:latest")
@@ -87,6 +86,27 @@ def _populate_embeddings(database_path: str) -> None:
         vector BLOB,
         created_at TEXT,
         metadata TEXT
+    );
+    CREATE TABLE IF NOT EXISTS lab_results (
+        result_id TEXT,
+        extractor TEXT,
+        test_entity_id TEXT,
+        measurement_entity_id TEXT,
+        reference_entity_id TEXT,
+        test_name TEXT,
+        measurement_text TEXT,
+        measurement_value REAL,
+        measurement_units TEXT,
+        reference_range TEXT,
+        date_raw TEXT,
+        date_parsed TEXT,
+        patient TEXT,
+        message_id TEXT,
+        attachment_id TEXT,
+        content_id TEXT,
+        chunk_index INTEGER,
+        metadata TEXT,
+        created_at TEXT
     );
     """
     with sqlite3.connect(database_path) as conn:

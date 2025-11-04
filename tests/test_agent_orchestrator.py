@@ -153,4 +153,6 @@ def test_orchestrator_falls_back_to_semantic_search():
     response = orchestrator.run("How is Meera's creatinine trending?")
 
     assert response.answer == "Found matches via semantic search."
-    assert [call.tool for call in response.tool_calls] == ["lab_results", "semantic_search"]
+    tools_used = [call.tool for call in response.tool_calls]
+    assert tools_used[0] == "lab_results"
+    assert "semantic_search" in tools_used[1:]

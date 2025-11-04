@@ -36,6 +36,7 @@ class ToolOrchestrator:
     def run(self, question: str, chat_history: List[tuple[str, str]] | None = None) -> AgentResponse:
         transcript: List[ToolCallRecord] = []
         pending_action: Dict[str, Any] | None = None
+        structured_tools = {"finance_payments", "lab_results", "medical_events"}
         for iteration in range(self.config.max_loops):
             if pending_action is None:
                 planner_payload = self._build_planner_prompt(question, transcript, chat_history)
@@ -73,6 +74,22 @@ class ToolOrchestrator:
             result = self.executor.execute(tool_name, params)
             record = ToolCallRecord(tool=tool_name, params=params, result=result)
             transcript.append(record)
+            if (
+                tool_name in structured_tools
+                and result.success
+                and self._is_empty_result(result.data)
+                and not any(call.tool == "semantic_search" for call in transcript)
+                and "semantic_search" in self.specs
+            ):
+                semantic_params = {"query": question}
+                auto_result = self.executor.execute("semantic_search", semantic_params)
+                transcript.append(
+                    ToolCallRecord(
+                        tool="semantic_search",
+                        params=semantic_params,
+                        result=auto_result,
+                    )
+                )
             if not result.success:
                 logger.info("Tool %s failed: %s", tool_name, result.error)
             # Ask LLM to produce final answer or decide next tool
@@ -136,8 +153,11 @@ class ToolOrchestrator:
             f"{tool_listing}\n\n"
             "Respond strictly in JSON with keys: 'action'. If action is 'call_tool', include 'tool' and 'params'.\n"
             "If action is 'final', include 'answer'.\n\n"
-            "You must only use tools that appear in the list above. If structured tools produce no results, fall back to the 'semantic_search' tool before giving up.\n"
-            "If none of the listed tools apply, respond with action 'final'.\n\n"
+            "Important reasoning rules:\n"
+            "  1. Use only the tools listed above.\n"
+            "  2. If you call a structured tool (finance_payments, lab_results, medical_events) and its 'results' field is empty or missing, you MUST immediately call 'semantic_search' with a relevant query before considering action 'final'.\n"
+            "  3. Do not return action 'final' unless semantic_search has been tried in this turn, or you already obtained meaningful data from another tool.\n"
+            "  4. If none of the tools apply after following the above rules, respond with action 'final' and explain the limitation.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"Conversation history:\n{history}\n"
             f"User question: {question}\n"
@@ -157,8 +177,11 @@ class ToolOrchestrator:
             "If the output is sufficient to answer the user question, respond with action 'final' and provide the answer.\n"
             "Otherwise respond with action 'call_tool' and specify the next tool and parameters.\n"
             "Remember to use valid JSON.\n\n"
-            "Only call tools that exist in the earlier tool list. If a structured tool produced no useful results, prefer calling 'semantic_search' before giving up.\n"
-            "If no listed tool applies, respond with action 'final' and explain the limitation.\n\n"
+            "Rules to follow now:\n"
+            "  • Use only tools from the list provided earlier.\n"
+            "  • If the most recent tool produced no data (empty 'results'), you MUST call 'semantic_search' next unless it has already been tried this turn.\n"
+            "  • Only return action 'final' after semantic_search has been attempted, or when you already have sufficient data from a previous tool.\n"
+            "  • If nothing applies, respond with action 'final' and explain the limitation.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"History:\n{history}\n"
             f"User question: {question}"
@@ -248,3 +271,17 @@ class ToolOrchestrator:
             lines.append(f"User: {user}")
             lines.append(f"Agent: {agent}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _is_empty_result(data: Any) -> bool:
+        if not data:
+            return True
+        if isinstance(data, dict):
+            for key in ("results", "mentions", "events"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return len(value) == 0
+            totals = data.get("totals")
+            if isinstance(totals, dict) and not totals:
+                return True
+        return False
