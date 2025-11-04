@@ -94,3 +94,13 @@ def test_orchestrator_handles_unknown_tool():
     assert "non_existent" in response.answer
     assert len(response.tool_calls) == 1
     assert not response.tool_calls[0].result.success
+
+
+def test_parse_json_falls_back_to_semantic_search():
+    text = (
+        "Action: call_tool\n"
+        "Note: other tools returned nothing so I will try semantic_search.\n"
+        "Params: {\"query\": \"creatinine\"}"
+    )
+    parsed = ToolOrchestrator._parse_json(text)
+    assert parsed["tool"] == "semantic_search"

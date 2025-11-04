@@ -136,7 +136,8 @@ class ToolOrchestrator:
             f"{tool_listing}\n\n"
             "Respond strictly in JSON with keys: 'action'. If action is 'call_tool', include 'tool' and 'params'.\n"
             "If action is 'final', include 'answer'.\n\n"
-            "You must only use tools that appear in the list above. If none apply, respond with action 'final'.\n\n"
+            "You must only use tools that appear in the list above. If structured tools produce no results, fall back to the 'semantic_search' tool before giving up.\n"
+            "If none of the listed tools apply, respond with action 'final'.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"Conversation history:\n{history}\n"
             f"User question: {question}\n"
@@ -156,7 +157,8 @@ class ToolOrchestrator:
             "If the output is sufficient to answer the user question, respond with action 'final' and provide the answer.\n"
             "Otherwise respond with action 'call_tool' and specify the next tool and parameters.\n"
             "Remember to use valid JSON.\n\n"
-            "Only call tools that exist in the earlier tool list. If no listed tool applies, respond with action 'final' and explain the limitation.\n\n"
+            "Only call tools that exist in the earlier tool list. If a structured tool produced no useful results, prefer calling 'semantic_search' before giving up.\n"
+            "If no listed tool applies, respond with action 'final' and explain the limitation.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"History:\n{history}\n"
             f"User question: {question}"
@@ -176,20 +178,23 @@ class ToolOrchestrator:
                         return candidate
                 except json.JSONDecodeError:
                     pass
-            kv_pairs: Dict[str, str] = {}
+            kv_pairs: Dict[str, Any] = {}
             for line in text.splitlines():
-                if ":" not in line:
+                stripped = line.strip()
+                if not stripped:
                     continue
-                key, _, value = line.partition(":")
+                if ":" not in stripped:
+                    kv_pairs.setdefault("notes", []).append(stripped)
+                    continue
+                key, _, value = stripped.partition(":")
                 key = key.strip().lower()
                 value = value.strip()
-                if key:
-                    if key.startswith("next tool"):
-                        kv_pairs["tool"] = value
-                    elif key.startswith("tool requested"):
-                        kv_pairs["tool"] = value
-                    else:
-                        kv_pairs[key] = value
+                if key.startswith("next tool") or key.startswith("tool requested"):
+                    kv_pairs["tool"] = value
+                elif key.startswith("note"):
+                    kv_pairs.setdefault("notes", []).append(value)
+                else:
+                    kv_pairs[key] = value
             if not kv_pairs:
                 return None
             action = kv_pairs.get("action")
@@ -198,6 +203,16 @@ class ToolOrchestrator:
             result: Dict[str, Any] = {"action": action.strip().lower()}
             if result["action"] == "call_tool":
                 tool = kv_pairs.get("tool")
+                if not tool:
+                    for note in kv_pairs.get("notes", []):
+                        lowered = note.lower()
+                        if lowered.startswith("tool") and ":" in note:
+                            _, _, candidate = note.partition(":")
+                            tool = candidate.strip()
+                            break
+                        if "semantic_search" in lowered:
+                            tool = "semantic_search"
+                            break
                 if not tool:
                     return None
                 result["tool"] = tool.strip()
