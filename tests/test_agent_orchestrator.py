@@ -104,3 +104,53 @@ def test_parse_json_falls_back_to_semantic_search():
     )
     parsed = ToolOrchestrator._parse_json(text)
     assert parsed["tool"] == "semantic_search"
+
+
+def test_orchestrator_falls_back_to_semantic_search():
+    def lab_handler(context: ToolContext, params: Dict[str, str]) -> ToolResult:
+        return ToolResult.success_result(
+            {"results": [], "patient_filter": params.get("patient"), "test_filter": params.get("test")}
+        )
+
+    def semantic_handler(context: ToolContext, params: Dict[str, str]) -> ToolResult:
+        return ToolResult.success_result({"query": params.get("query"), "results": ["match"]})
+
+    lab_spec = ToolSpec(
+        name="lab_results",
+        description="Fetch lab results",
+        parameters=[
+            ToolParameter(name="patient", description="Patient", required=False),
+            ToolParameter(name="test", description="Test", required=False),
+        ],
+        handler=lab_handler,
+    )
+    semantic_spec = ToolSpec(
+        name="semantic_search",
+        description="Search embeddings",
+        parameters=[ToolParameter(name="query", description="Query")],
+        handler=semantic_handler,
+    )
+
+    registry = {lab_spec.name: lab_spec, semantic_spec.name: semantic_spec}
+    context = ToolContext(database_path="/tmp/test.db")
+    executor = ToolExecutor(context, registry)
+
+    llm = StubLLMClient(
+        {
+            0: json.dumps(
+                {
+                    "action": "call_tool",
+                    "tool": "lab_results",
+                    "params": {"patient": "Meera", "test": "creatinine"},
+                }
+            ),
+            1: "Action: call_tool\nNote: lab results returned nothing so I will try semantic_search.\nParams: {\"query\": \"creatinine Meera\"}",
+            2: json.dumps({"action": "final", "answer": "Found matches via semantic search."}),
+        }
+    )
+
+    orchestrator = ToolOrchestrator(registry, executor, llm, OrchestratorConfig(max_loops=3))
+    response = orchestrator.run("How is Meera's creatinine trending?")
+
+    assert response.answer == "Found matches via semantic search."
+    assert [call.tool for call in response.tool_calls] == ["lab_results", "semantic_search"]
