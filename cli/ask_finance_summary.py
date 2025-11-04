@@ -12,10 +12,7 @@ import argparse
 import logging
 
 from jarvis.cli import configure_runtime
-from jarvis.knowledge.finance_graph import (
-    MistralLLMClient,
-    ask_finance_question,
-)
+from jarvis.knowledge.finance_graph import OllamaLLMClient, ask_finance_question
 from jarvis.knowledge.neo4j_exporter import Neo4jConnectionConfig
 
 logger = logging.getLogger(__name__)
@@ -87,7 +84,7 @@ def main() -> None:
         password=args.neo4j_password,
         database=args.neo4j_database,
     )
-    llm_client = MistralLLMClient(
+    llm_client = OllamaLLMClient(
         model=args.llm_model,
         endpoint=args.llm_endpoint,
         timeout=args.llm_timeout,

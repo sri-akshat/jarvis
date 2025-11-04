@@ -109,7 +109,7 @@ ollama serve
 python cli/processing_worker.py \
   --database data/messages.db \
   --entity-backend llm \
-  --llm-model mistral
+  --llm-model qwen2.5:7b
 ```
 
 This daemon loops through:
@@ -153,19 +153,19 @@ If you want to run entity extraction with an on-device LLM:
    or download the desktop app from [ollama.com](https://ollama.com/download).
 2. Pull the model you plan to use (for example):
    ```sh
-   ollama pull mistral
+   ollama pull qwen2.5:7b
    ```
 3. Start the service before running the worker in LLM mode:
    ```sh
    ollama serve
-   python cli/processing_worker.py --entity-backend llm --llm-model mistral
+   python cli/processing_worker.py --entity-backend llm --llm-model qwen2.5:7b
    ```
 
 You can point the worker at another OpenAI-compatible endpoint with `--llm-endpoint` and `--llm-timeout`.
 
 ### LLM-powered payment summary (experimental)
 
-Once Neo4j contains your graph (see [Neo4j Visualisation](#neo4j-visualisation)), you can ask an on-device LLM (e.g., Mistral via Ollama) to reason over the payment mentions:
+Once Neo4j contains your graph (see [Neo4j Visualisation](#neo4j-visualisation)), you can ask an on-device LLM (e.g., Qwen 2.5 via Ollama) to reason over the payment mentions:
 
 ```sh
 python cli/ask_finance_summary.py \
@@ -177,7 +177,7 @@ The script fetches all `MONEY` mentions tied to the counterparty, computes numer
 
 ### General agent (experimental)
 
-An interactive agent can automatically select tools (finance, medical, etc.) and use Mistral to craft an answer:
+An interactive agent can automatically select tools (finance, medical, etc.) and use Qwen 2.5 to craft an answer:
 
 ```sh
 python cli/agent_query.py \

@@ -139,8 +139,8 @@ def aggregate_totals(mentions: Iterable[PaymentMention]) -> Dict[str, float]:
     return totals
 
 
-class MistralLLMClient:
-    def __init__(self, model: str = "mistral", endpoint: str = "http://localhost:11434/api/generate", timeout: int = 60):
+class OllamaLLMClient:
+    def __init__(self, model: str = "qwen2.5:7b", endpoint: str = "http://localhost:11434/api/generate", timeout: int = 60):
         self.model = model
         self.endpoint = endpoint
         self.timeout = timeout
@@ -158,6 +158,10 @@ class MistralLLMClient:
         if choices:
             return choices[0].get("message", {}).get("content", "")
         return ""
+
+
+# Backwards compatibility alias
+MistralLLMClient = OllamaLLMClient
 
 
 def build_llm_prompt(counterparty: str, mentions: List[PaymentMention], totals: Dict[str, float]) -> str:
@@ -189,7 +193,7 @@ def build_llm_prompt(counterparty: str, mentions: List[PaymentMention], totals: 
 def ask_finance_question(
     connection: Neo4jConnectionConfig,
     counterparty: str,
-    llm_client: MistralLLMClient,
+    llm_client: OllamaLLMClient,
     limit: Optional[int] = None,
 ) -> Tuple[List[PaymentMention], Dict[str, float], str]:
     mentions = collect_payments_from_graph(connection, counterparty, limit=limit)
@@ -203,6 +207,7 @@ __all__ = [
     "PaymentMention",
     "collect_payments_from_graph",
     "aggregate_totals",
+    "OllamaLLMClient",
     "MistralLLMClient",
     "ask_finance_question",
 ]

@@ -14,7 +14,7 @@ import logging
 from jarvis.agent import ToolContext, ToolExecutor, ToolOrchestrator, load_default_registry
 from jarvis.agent.orchestrator import OrchestratorConfig
 from jarvis.cli import configure_runtime
-from jarvis.knowledge.finance_graph import MistralLLMClient
+from jarvis.knowledge.finance_graph import OllamaLLMClient
 from jarvis.knowledge.neo4j_exporter import Neo4jConnectionConfig
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--neo4j-user", default="neo4j", help="Neo4j username")
     parser.add_argument("--neo4j-password", help="Neo4j password")
     parser.add_argument("--neo4j-database", default=None, help="Optional Neo4j database name")
-    parser.add_argument("--llm-model", default="mistral:latest", help="LLM model tag (default mistral:latest)")
+    parser.add_argument("--llm-model", default="qwen2.5:7b", help="LLM model tag (default qwen2.5:7b)")
     parser.add_argument("--llm-endpoint", default="http://localhost:11434/api/generate", help="LLM HTTP endpoint")
     parser.add_argument("--llm-timeout", type=int, default=60, help="LLM request timeout (seconds)")
     parser.add_argument("--log-level", default=None, help="Optional log level override")
@@ -64,7 +64,7 @@ def main() -> None:
         },
     )
     executor = ToolExecutor(context, registry)
-    llm_client = MistralLLMClient(model=args.llm_model, endpoint=args.llm_endpoint, timeout=args.llm_timeout)
+    llm_client = OllamaLLMClient(model=args.llm_model, endpoint=args.llm_endpoint, timeout=args.llm_timeout)
     orchestrator = ToolOrchestrator(
         specs=registry,
         executor=executor,

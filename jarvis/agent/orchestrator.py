@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from jarvis.agent.base import AgentResponse, ToolCallRecord, ToolExecutor, ToolResult, ToolSpec
-from jarvis.knowledge.finance_graph import MistralLLMClient
+from jarvis.knowledge.finance_graph import OllamaLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class ToolOrchestrator:
         self,
         specs: Dict[str, ToolSpec],
         executor: ToolExecutor,
-        llm_client: MistralLLMClient,
+        llm_client: OllamaLLMClient,
         config: OrchestratorConfig | None = None,
     ) -> None:
         self.specs = specs
