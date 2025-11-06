@@ -1,0 +1,6 @@
+Collecting redis
+  Downloading redis-7.0.1-py3-none-any.whl (339 kB)
+Collecting async-timeout>=4.0.3
+  Using cached async_timeout-5.0.1-py3-none-any.whl (6.2 kB)
+Installing collected packages: async-timeout, redis
+Successfully installed async-timeout-5.0.1 redis-7.0.1

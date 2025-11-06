@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,20 +11,42 @@ from typing import Iterable, Protocol
 from jarvis.ingestion.common.models import Attachment, Message
 from jarvis.knowledge import task_queue
 
+logger = logging.getLogger(__name__)
+
 
 class DataStore(Protocol):
-    def save_messages(self, messages: Iterable[Message]) -> tuple[int, int, int]:
+    def save_messages(
+        self,
+        messages: Iterable[Message],
+        *,
+        progress_interval: int | None = None,
+    ) -> tuple[int, int, int]:
         ...
 
 
 class SQLiteDataStore:
     """SQLite-backed message data store."""
 
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(
+        self,
+        database_path: Path | str,
+        queue_target: str | None = None,
+        connection_timeout: float = 30.0,
+    ) -> None:
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.database_path) as conn:
+        self.queue_target = queue_target or str(self.database_path)
+        self.connection_timeout = connection_timeout
+        with self._connect() as conn:
             self._ensure_schema(conn)
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(
+            self.database_path,
+            timeout=self.connection_timeout,
+        )
+        conn.execute("PRAGMA foreign_keys = ON;")
+        return conn
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute(
@@ -145,13 +168,28 @@ class SQLiteDataStore:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS message_search USING fts5(
+                message_id UNINDEXED,
+                subject,
+                sender,
+                recipients,
+                body
+            )
+            """
+        )
 
-    def save_messages(self, messages: Iterable[Message]) -> tuple[int, int, int]:
+    def save_messages(
+        self,
+        messages: Iterable[Message],
+        *,
+        progress_interval: int | None = None,
+    ) -> tuple[int, int, int]:
         pending_content_ids: list[str] = []
         message_count = 0
         attachment_count = 0
-        with sqlite3.connect(self.database_path) as conn:
-            conn.execute("PRAGMA foreign_keys = ON;")
+        with self._connect() as conn:
             self._ensure_schema(conn)
             for message in messages:
                 message_count += 1
@@ -184,17 +222,24 @@ class SQLiteDataStore:
                     ),
                 )
                 message_content_id = self._register_message_content(conn, message)
+                self._upsert_message_search(conn, message)
                 pending_content_ids.append(message_content_id)
                 for attachment in message.attachments:
                     attachment_count += 1
                     self._save_attachment(conn, message.id, attachment)
                     attachment_content_id = self._register_attachment_content(
-                        conn, message.id, attachment
+                        conn, message, attachment
                     )
                     pending_content_ids.append(attachment_content_id)
+                if progress_interval and message_count % progress_interval == 0:
+                    logger.info(
+                        "[datastore] Persisted %s message(s) so far (attachments %s)",
+                        message_count,
+                        attachment_count,
+                    )
         for content_id in pending_content_ids:
             task_queue.enqueue_task(
-                str(self.database_path),
+                self.queue_target,
                 "semantic_index",
                 {"content_id": content_id},
             )
@@ -247,15 +292,29 @@ class SQLiteDataStore:
                 "text/plain",
                 _sha256(message.body.encode("utf-8")) if message.body else None,
                 datetime.now(timezone.utc).isoformat(),
-                json.dumps({"subject": message.subject}, sort_keys=True),
+                json.dumps(
+                    {
+                        "subject": message.subject,
+                        "sender": message.sender,
+                        "recipients": list(message.recipients),
+                        "thread_id": message.thread_id,
+                    },
+                    sort_keys=True,
+                ),
             ),
         )
         return content_id
 
     def _register_attachment_content(
-        self, conn: sqlite3.Connection, message_id: str, attachment: Attachment
+        self, conn: sqlite3.Connection, message: Message, attachment: Attachment
     ) -> str:
-        content_id = f"attachment:{message_id}:{attachment.id}"
+        content_id = f"attachment:{message.id}:{attachment.id}"
+        attachment_meta = dict(attachment.metadata or {})
+        attachment_meta.setdefault("filename", attachment.filename)
+        attachment_meta.setdefault("message_subject", message.subject)
+        attachment_meta.setdefault("message_sender", message.sender)
+        attachment_meta.setdefault("message_recipients", list(message.recipients))
+        attachment_meta.setdefault("thread_id", message.thread_id)
         conn.execute(
             """
             INSERT INTO content_registry (
@@ -269,16 +328,36 @@ class SQLiteDataStore:
             """,
             (
                 content_id,
-                message_id,
+                message.id,
                 attachment.id,
                 "attachment",
                 attachment.mime_type,
                 _sha256(attachment.data),
                 datetime.now(timezone.utc).isoformat(),
-                json.dumps(attachment.metadata, sort_keys=True),
+                json.dumps(attachment_meta, sort_keys=True),
             ),
         )
         return content_id
+
+    def _upsert_message_search(self, conn: sqlite3.Connection, message: Message) -> None:
+        recipients = ",".join(recipient for recipient in message.recipients)
+        conn.execute(
+            "DELETE FROM message_search WHERE message_id = ?",
+            (message.id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO message_search (message_id, subject, sender, recipients, body)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                message.id,
+                message.subject or "",
+                message.sender or "",
+                recipients,
+                message.body or "",
+            ),
+        )
 
 
 def _sha256(data: bytes | None) -> str | None:

@@ -74,8 +74,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-timeout",
         type=int,
-        default=120,
-        help="Timeout for LLM requests in seconds",
+        default=240,
+        help="Timeout for LLM requests in seconds (default: 240)",
     )
     parser.add_argument(
         "--lab-extractor",
@@ -119,7 +119,7 @@ def build_entity_extractor(args: argparse.Namespace, database_path: str):
     return builder, extractor_name
 
 
-def handle_semantic_task(indexer: SemanticIndexer, payload: dict, database: str) -> None:
+def handle_semantic_task(indexer: SemanticIndexer, payload: dict, queue_target: str) -> None:
     content_id = payload.get("content_id")
     if not content_id:
         raise ValueError("semantic_index task missing content_id")
@@ -129,7 +129,7 @@ def handle_semantic_task(indexer: SemanticIndexer, payload: dict, database: str)
         logger.info("[semantic_index] Skipped %s: no content available", content_id)
         return
     task_queue.enqueue_task(
-        database,
+        queue_target,
         "entity_extract",
         {"content_id": content_id},
     )
@@ -139,7 +139,7 @@ def handle_entity_task(
     builder: KnowledgeGraphBuilder,
     extractor_name: str,
     payload: dict,
-    database: str,
+    queue_target: str,
     *,
     financial_extractor: str,
     medical_extractor: str,
@@ -151,17 +151,17 @@ def handle_entity_task(
     processed = builder.run(content_id=content_id)
     if processed:
         task_queue.enqueue_task(
-            database,
+            queue_target,
             "lab_results",
             {"content_id": content_id, "extractor": extractor_name},
         )
         task_queue.enqueue_task(
-            database,
+            queue_target,
             "financial_records",
             {"content_id": content_id, "extractor": financial_extractor},
         )
         task_queue.enqueue_task(
-            database,
+            queue_target,
             "medical_events",
             {"content_id": content_id, "extractor": medical_extractor},
         )
@@ -202,9 +202,10 @@ def handle_medical_task(builder: MedicalFactBuilder, payload: dict) -> None:
     logger.info("[medical_events] Produced %s row(s) for %s", produced, content_id)
 
 
-def run(args: argparse.Namespace) -> None:
+def run(args: argparse.Namespace) -> None:  # pragma: no cover - requires long-running worker
     config = configure_runtime(args.database, args.log_level)
     db_path = str(config.database_path)
+    queue_target = config.task_queue_url or db_path
     indexer = SemanticIndexer(db_path)
     entity_builder, extractor_name = build_entity_extractor(args, db_path)
     lab_builder = LabFactBuilder(db_path, extractor=args.lab_extractor)
@@ -212,7 +213,7 @@ def run(args: argparse.Namespace) -> None:
     medical_builder = MedicalFactBuilder(db_path, extractor=args.medical_extractor)
 
     while True:
-        task = task_queue.fetch_and_lock_task(db_path, task_types=args.task_types)
+        task = task_queue.fetch_and_lock_task(queue_target, task_types=args.task_types)
         if not task:
             if args.run_once:
                 break
@@ -226,13 +227,13 @@ def run(args: argparse.Namespace) -> None:
         )
         try:
             if task.task_type == "semantic_index":
-                handle_semantic_task(indexer, task.payload, db_path)
+                handle_semantic_task(indexer, task.payload, queue_target)
             elif task.task_type == "entity_extract":
                 handle_entity_task(
                     entity_builder,
                     extractor_name,
                     task.payload,
-                    db_path,
+                    queue_target,
                     financial_extractor=args.financial_extractor,
                     medical_extractor=args.medical_extractor,
                 )
@@ -247,17 +248,17 @@ def run(args: argparse.Namespace) -> None:
         except Exception as exc:  # pragma: no cover - worker runtime
             logger.exception("Task %s failed: %s", task.task_id, exc)
             task_queue.fail_task(
-                db_path,
+                queue_target,
                 task.task_id,
                 error=repr(exc),
             )
         else:
-            task_queue.complete_task(db_path, task.task_id)
+            task_queue.complete_task(queue_target, task.task_id)
             logger.info("Completed task %s (%s)", task.task_id, task.task_type)
         if args.run_once:
             break
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover - CLI entry point
     args = parse_args()
     run(args)

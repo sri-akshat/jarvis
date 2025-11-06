@@ -46,13 +46,33 @@ class GmailService:
             self.token_path.write_text(creds.to_json(), encoding="utf-8")
         return build("gmail", "v1", credentials=creds)
 
-    def search(self, query: str) -> Iterable[Message]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        page_size: int | None = None,
+    ) -> Iterable[Message]:
+        remaining = limit if (limit is not None and limit >= 0) else None
+        max_results = page_size or 100
+        if max_results <= 0 or max_results > 500:
+            raise ValueError("page_size must be between 1 and 500")
         try:
-            request = self.service.users().messages().list(userId=self.user_id, q=query)
+            request = self.service.users().messages().list(
+                userId=self.user_id,
+                q=query,
+                maxResults=max_results,
+            )
             while request is not None:
                 response = request.execute()
                 for message_ref in response.get("messages", []):
+                    if remaining is not None and remaining <= 0:
+                        return
                     yield self._get_message(message_ref["id"])
+                    if remaining is not None:
+                        remaining -= 1
+                        if remaining <= 0:
+                            return
                 request = self.service.users().messages().list_next(request, response)
         except HttpError as exc:  # pragma: no cover
             raise RuntimeError("Failed to query Gmail API") from exc
