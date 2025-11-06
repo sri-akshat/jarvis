@@ -58,8 +58,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-timeout",
         type=int,
-        default=60,
-        help="LLM request timeout in seconds (default: 60)",
+        default=180,
+        help="LLM request timeout in seconds (default: 180)",
     )
     parser.add_argument(
         "--limit",

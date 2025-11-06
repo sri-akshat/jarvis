@@ -39,11 +39,20 @@ def main() -> None:
         return
 
     for rank, result in enumerate(results, start=1):
-        print(f"#{rank} | score={result.score:.3f} | content={result.content_id}")
+        print(
+            f"#{rank} | score={result.score:.3f} (raw={result.raw_score:.3f}, hits={result.keyword_hits}, strong_hits={result.strong_hits}) | citation={result.citation_id}"
+        )
+        print(f"    content_id: {result.content_id} (chunk {result.chunk_index})")
+        if result.message_id:
+            print(f"    message_id: {result.message_id}")
+        if result.attachment_id:
+            print(f"    attachment_id: {result.attachment_id}")
         if result.attachment_filename:
             print(f"    file: {result.attachment_filename} (page {result.page})")
         if result.subject:
             print(f"    subject: {result.subject}")
+        if result.source:
+            print(f"    source: {result.source}")
         print(f"    text: {result.text[:400]}")
         print()
 

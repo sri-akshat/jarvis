@@ -78,18 +78,45 @@ class ToolOrchestrator:
                 tool_name in structured_tools
                 and result.success
                 and self._is_empty_result(result.data)
-                and not any(call.tool == "semantic_search" for call in transcript)
                 and "semantic_search" in self.specs
+                and not any(r.tool == "semantic_search" for r in transcript)
             ):
-                semantic_params = {"query": question}
-                auto_result = self.executor.execute("semantic_search", semantic_params)
+                logger.debug("Structured tool %s returned empty; auto-invoking semantic_search.", tool_name)
+                auto_params = {"query": question}
+                auto_result = self.executor.execute("semantic_search", auto_params)
                 transcript.append(
                     ToolCallRecord(
                         tool="semantic_search",
-                        params=semantic_params,
+                        params=auto_params,
                         result=auto_result,
                     )
                 )
+                result = auto_result
+            if (
+                tool_name == "semantic_search"
+                and result.success
+                and isinstance(result.data, dict)
+                and "fetch_message_context" in self.specs
+            ):
+                fetched_ids: set[str] = set()
+                for item in result.data.get("results", []) or []:
+                    message_id = item.get("message_id")
+                    if not message_id or message_id in fetched_ids:
+                        continue
+                    fetch_params = {
+                        "message_id": message_id,
+                        "thread_window": params.get("thread_window", 5),
+                        "include_body": True,
+                    }
+                    fetch_result = self.executor.execute("fetch_message_context", fetch_params)
+                    transcript.append(
+                        ToolCallRecord(
+                            tool="fetch_message_context",
+                            params=fetch_params,
+                            result=fetch_result,
+                        )
+                    )
+                    fetched_ids.add(message_id)
             if not result.success:
                 logger.info("Tool %s failed: %s", tool_name, result.error)
             # Ask LLM to produce final answer or decide next tool
@@ -154,10 +181,16 @@ class ToolOrchestrator:
             "Respond strictly in JSON with keys: 'action'. If action is 'call_tool', include 'tool' and 'params'.\n"
             "If action is 'final', include 'answer'.\n\n"
             "Important reasoning rules:\n"
-            "  1. Use only the tools listed above.\n"
-            "  2. If you call a structured tool (finance_payments, lab_results, medical_events) and its 'results' field is empty or missing, you MUST immediately call 'semantic_search' with a relevant query before considering action 'final'.\n"
-            "  3. Do not return action 'final' unless semantic_search has been tried in this turn, or you already obtained meaningful data from another tool.\n"
-            "  4. If none of the tools apply after following the above rules, respond with action 'final' and explain the limitation.\n\n"
+            "  1. Use only the tools listed above (exact names, case-sensitive). Never invent or guess a new tool name.\n"
+            "  2. If a structured tool (finance_payments, lab_results, medical_events) cannot directly answer the user's question—either because it returns no rows or because the fields provided do not resolve the question—you SHOULD plan to call 'semantic_search' next with a precise query. When a structured tool yields zero rows, the only valid follow-up is 'semantic_search'.\n"
+            "  3. When 'semantic_search' returns results that include a 'message_id', you must call 'fetch_message_context' for the relevant message(s) before producing a final answer. This ensures the answer is grounded in the full email/thread.\n"
+            "  4. Do not return action 'final' unless semantic_search has been attempted (or you already have sufficient grounded data) and any cited message IDs have been expanded via fetch_message_context.\n"
+            "  5. Construct every tool call using the current user question. Do not reuse query strings or parameters from earlier turns unless the user explicitly repeats the same request.\n"
+            "  6. If none of the tools apply after following the above rules, respond with action 'final' and explain the limitation.\n\n"
+            "Examples of good tool selection:\n"
+            "  • Question: \"How much have I paid to Dezignare?\" → Call finance_payments first. If totals appear, return them as the answer.\n"
+            "  • Question: \"What was my last conversation with Adarsh?\" → Use semantic_search with a focused query, then call fetch_message_context on the returned message_id(s) to summarise the actual emails.\n"
+            "  • Question: \"What is Dezignare's bank account number?\" → finance_payments does not list account numbers, so immediately follow up with semantic_search (and then fetch_message_context if message IDs are returned) to inspect source emails.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"Conversation history:\n{history}\n"
             f"User question: {question}\n"
@@ -178,9 +211,13 @@ class ToolOrchestrator:
             "Otherwise respond with action 'call_tool' and specify the next tool and parameters.\n"
             "Remember to use valid JSON.\n\n"
             "Rules to follow now:\n"
-            "  • Use only tools from the list provided earlier.\n"
-            "  • If the most recent tool produced no data (empty 'results'), you MUST call 'semantic_search' next unless it has already been tried this turn.\n"
-            "  • Only return action 'final' after semantic_search has been attempted, or when you already have sufficient data from a previous tool.\n"
+            "  • Use only tools from the list provided earlier (exact names, no new tools).\n"
+            "  • Evaluate whether the latest tool output genuinely answers the user's question. If it does not (for example, missing relevant fields or empty results), the correct next action is to call 'semantic_search' with a focused query (unless it has already been tried this turn).\n"
+            "  • If the latest tool returned zero rows (e.g., empty 'mentions', 'results', or 'events'), respond with action 'call_tool' and set 'tool' to 'semantic_search'.\n"
+            "  • When semantic_search returns hits containing 'message_id', call 'fetch_message_context' next to retrieve the full email/thread before summarising.\n"
+            "  • Only return action 'final' after semantic_search has been attempted (when applicable) and all cited message IDs have been expanded via fetch_message_context, or when you already have sufficient data from a previous tool.\n"
+            "  • Always base follow-up tool parameters on the current user question; do not reuse prior queries unless the user repeats the same request.\n"
+            "  • After semantic_search (and message expansion), do not call additional tools unless they are on the list and clearly required. If the answer is still unavailable, return action 'final' and clearly explain the limitation using the evidence you have.\n"
             "  • If nothing applies, respond with action 'final' and explain the limitation.\n\n"
             f"Conversation (most recent last):\n{conversation}\n\n"
             f"History:\n{history}\n"
@@ -282,6 +319,6 @@ class ToolOrchestrator:
                 if isinstance(value, list):
                     return len(value) == 0
             totals = data.get("totals")
-            if isinstance(totals, dict) and not totals:
+            if isinstance(totals, dict) and len(totals) == 0:
                 return True
         return False

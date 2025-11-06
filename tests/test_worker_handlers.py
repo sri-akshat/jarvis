@@ -65,7 +65,7 @@ def test_handle_entity_task_enqueues_followups(monkeypatch):
         builder,
         extractor_name="lab",
         payload={"content_id": "cid"},
-        database="db.sqlite",
+        queue_target="db.sqlite",
         financial_extractor="fin",
         medical_extractor="med",
     )
@@ -81,7 +81,7 @@ def test_handle_entity_task_no_work(monkeypatch):
         builder,
         extractor_name="lab",
         payload={"content_id": "cid"},
-        database="db.sqlite",
+        queue_target="db.sqlite",
         financial_extractor="fin",
         medical_extractor="med",
     )

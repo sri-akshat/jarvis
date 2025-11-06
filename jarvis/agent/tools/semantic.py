@@ -17,11 +17,19 @@ def semantic_search_tool(context: ToolContext, params: Dict[str, Any]) -> ToolRe
     data = [
         {
             "score": result.score,
+            "raw_score": result.raw_score,
             "content_id": result.content_id,
+            "chunk_index": result.chunk_index,
+            "citation_id": result.citation_id,
             "text": result.text,
             "page": result.page,
             "filename": result.attachment_filename,
             "subject": result.subject,
+            "message_id": result.message_id,
+            "attachment_id": result.attachment_id,
+            "source": result.source,
+            "metadata": result.metadata,
+            "keyword_hits": result.keyword_hits,
         }
         for result in results
     ]

@@ -82,6 +82,7 @@ def upsert_local_file(
     path: Path,
     *,
     sha: str,
+    queue_target: str | None = None,
 ) -> bool:
     content_id = f"file:{sha}"
     mime_type, _ = mimetypes.guess_type(path.name)
@@ -91,7 +92,7 @@ def upsert_local_file(
         "filename": path.name,
     }
     now = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(database) as conn:
+    with sqlite3.connect(database, timeout=30.0) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         stat = path.stat()
         conn.execute(
@@ -138,8 +139,9 @@ def upsert_local_file(
                 ),
             )
     if inserted:
+        target = queue_target or str(database)
         task_queue.enqueue_task(
-            str(database),
+            target,
             "semantic_index",
             {"content_id": f"file:{sha}"},
         )
@@ -147,7 +149,7 @@ def upsert_local_file(
 
 
 def file_already_registered(database: Path, sha: str) -> bool:
-    with sqlite3.connect(database) as conn:
+    with sqlite3.connect(database, timeout=30.0) as conn:
         row = conn.execute(
             """
             SELECT 1 FROM content_registry
@@ -165,6 +167,7 @@ def main() -> None:
     if not root.exists():
         raise SystemExit(f"Directory does not exist: {root}")
     database = config.database_path.expanduser()
+    queue_target = config.task_queue_url or str(database)
     total = 0
     skipped = 0
     for file_path in iter_files(root, args.recursive, args.extensions):
@@ -173,7 +176,12 @@ def main() -> None:
         if file_already_registered(database, sha):
             skipped += 1
             continue
-        inserted = upsert_local_file(database, file_path, sha=sha)
+        inserted = upsert_local_file(
+            database,
+            file_path,
+            sha=sha,
+            queue_target=queue_target,
+        )
         if inserted:
             logger.info("Enqueued %s", file_path)
         else:

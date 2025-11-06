@@ -228,11 +228,20 @@ def test_semantic_tool_returns_matches(monkeypatch):
     class StubResult:
         def __init__(self):
             self.score = 0.9
-            self.content_id = "message:1:0"
+            self.raw_score = 0.9
+            self.content_id = "message:1"
+            self.chunk_index = 0
+            self.citation_id = "message:1:0"
             self.text = "Serum creatinine is 1.0 mg/dL"
             self.page = 0
             self.attachment_filename = "report.pdf"
             self.subject = "Lab report"
+            self.message_id = "message-1"
+            self.attachment_id = None
+            self.source = "message"
+            self.metadata = {}
+            self.keyword_hits = 1
+            self.strong_hits = 1
 
     class StubRetriever:
         def __init__(self, *_args, **_kwargs):

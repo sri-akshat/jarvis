@@ -32,7 +32,7 @@ jarvis/
       medical/                # Medical fact builder + queries
     entity_extractor.py       # spaCy/LLM extraction backends and graph builder
     semantic_indexer.py       # Text chunking and embedding storage
-    task_queue.py             # Lightweight SQLite-backed work queue
+    task_queue.py             # Task queue helpers (SQLite fallback, Redis optional)
 tests/                        # Pytest suite covering ingestion + knowledge layers
 .github/workflows/            # CI configuration (lint/test/coverage)
 ```
@@ -65,8 +65,28 @@ Environment variables the CLIs understand:
 
 - `JARVIS_DATABASE` – default path to the SQLite datastore (fallback: `data/messages.db`)
 - `JARVIS_LOG_LEVEL` – default logging level (`INFO`, `DEBUG`, ...)
+- `JARVIS_TASK_QUEUE` – optional Redis URL (e.g. `redis://localhost:6379/0`) for the work queue; falls back to the SQLite table when unset
+- `JARVIS_TASK_QUEUE_PREFIX` – optional Redis key prefix (default `jarvis:task_queue`)
+- `JARVIS_STRUCTURED_LOGGING` – set to `true/false` to toggle JSON logs for long-running workers
+- `JARVIS_CONFIG_FILE` – optional path to an `.ini` file (default lookup: `jarvis.ini`, `config/jarvis.ini`)
 
 > **Note** All CLI examples below assume you run them from the repository root (e.g. `python cli/fetch_gmail_messages.py ...`). The CLI module now self-configures `sys.path`, so the commands work whether you execute them as scripts or with `python -m`.
+
+If you prefer configuration files, add a `jarvis.ini` next to the project:
+
+```
+[database]
+path = data/messages.db
+
+[queue]
+task_queue_url = redis://localhost:6379/0
+
+[logging]
+level = INFO
+structured = true
+```
+
+Values are resolved using the following precedence: **explicit CLI argument → environment variable → config file → built-in defaults**.
 
 ## Ingestion Workflow
 
@@ -74,6 +94,11 @@ Environment variables the CLIs understand:
 
 ```sh
 python cli/fetch_gmail_messages.py "subject:Meera report" --credentials /path/to/credentials.json
+# Optional knobs:
+#   --page-size 100     # Gmail page size (1-500)
+#   --batch-size 50     # Persist results in batches so Redis stays responsive
+#   --progress-interval 25  # Log progress every N messages
+#   --limit 200          # Hard cap per run (omit to fetch everything)
 ```
 
 Writes:
@@ -100,7 +125,18 @@ Verify:
 
 ### 3. Process the Queue (recommended)
 
-The ingestion steps above enqueue downstream tasks (`semantic_index`, `entity_extract`, and fact builders). The most consistent way to handle the pipeline is to let the worker drain the queue:
+The ingestion steps above enqueue downstream tasks (`semantic_index`, `entity_extract`, and fact builders). The most consistent way to handle the pipeline is to let the worker drain the queue. For higher concurrency you can point the queue at Redis (e.g. the lightweight Docker image below) and export `JARVIS_TASK_QUEUE=redis://localhost:6379/0`; otherwise the worker falls back to the SQLite table.
+
+```sh
+docker run -d \
+  --name jarvis-redis \
+  -p 6379:6379 \
+  -v redis_data:/data \
+  redis:7-alpine \
+  redis-server --appendonly yes
+
+export JARVIS_TASK_QUEUE=redis://localhost:6379/0
+```
 
 ```sh
 # Start Ollama only if you plan to use the LLM backend.

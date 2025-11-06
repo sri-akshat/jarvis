@@ -71,7 +71,7 @@ def _extract_amount(canonical: str, aliases: Iterable[str] | None) -> Tuple[Opti
     return None, canonical
 
 
-def collect_payments_from_graph(
+def collect_payments_from_graph(  # pragma: no cover - requires Neo4j integration
     connection: Neo4jConnectionConfig,
     canonical_name: str,
     limit: Optional[int] = None,
@@ -145,7 +145,7 @@ class OllamaLLMClient:
         self.endpoint = endpoint
         self.timeout = timeout
 
-    def chat(self, prompt: str) -> str:
+    def chat(self, prompt: str) -> str:  # pragma: no cover - HTTP integration
         payload = {"model": self.model, "prompt": prompt, "stream": False}
         response = requests.post(self.endpoint, json=payload, timeout=self.timeout)
         response.raise_for_status()

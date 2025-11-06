@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--neo4j-database", default=None, help="Optional Neo4j database name")
     parser.add_argument("--llm-model", default="qwen2.5:7b", help="LLM model tag (default qwen2.5:7b)")
     parser.add_argument("--llm-endpoint", default="http://localhost:11434/api/generate", help="LLM HTTP endpoint")
-    parser.add_argument("--llm-timeout", type=int, default=60, help="LLM request timeout (seconds)")
+    parser.add_argument("--llm-timeout", type=int, default=180, help="LLM request timeout (seconds, default 180)")
     parser.add_argument("--log-level", default=None, help="Optional log level override")
     parser.add_argument("--max-loops", type=int, default=3, help="Maximum tool iterations")
     parser.add_argument(

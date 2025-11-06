@@ -48,6 +48,30 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional log level override (e.g. INFO, DEBUG)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum number of messages to ingest (default: all)",
+    )
+    parser.add_argument(
+        "--page-size",
+        type=int,
+        default=100,
+        help="Number of messages the Gmail API should fetch per request (1-500, default: 100)",
+    )
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=50,
+        help="Log progress every N messages (default: 50; set to 0 to disable)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=200,
+        help="Persist messages in batches of this size (default: 200; <=0 means process all at once)",
+    )
     return parser.parse_args()
 
 
@@ -59,10 +83,19 @@ def main() -> None:
         token_path=args.token,
         user_id=args.user_id,
     )
-    datastore = SQLiteDataStore(config.database_path)
+    datastore = SQLiteDataStore(
+        config.database_path,
+        queue_target=config.task_queue_url,
+    )
     logger.info("Fetching Gmail messages for query '%s'", args.query)
     message_count, attachment_count, task_count = ingest_messages(
-        service, datastore, args.query
+        service,
+        datastore,
+        args.query,
+        limit=args.limit,
+        page_size=args.page_size,
+        progress_interval=(args.progress_interval or None),
+        batch_size=args.batch_size,
     )
     logger.info(
         "Ingestion complete for query '%s': %s message(s), %s attachment(s), %s task(s) queued.",
