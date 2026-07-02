@@ -50,5 +50,6 @@ The Q4 roadmap below maps to these OKRs:
 - Integrate a safe Python execution tool for scratchpad computations.
 - Prototype a UI DSL or schema approach for dynamic responses (e.g., trend graphs).
 - Explore ambient listening hardware concepts once policy and privacy layers are in place.
+- Extend Jarvis's ingestion capabilities beyond Gmail and local documents to support automated or semi-automated ingestion of WhatsApp conversations and metadata from iOS devices. This pipeline will decrypt/parse text logs, map media files to their respective conversations, extract semantic text chunks, and feed structured data into the existing task_queue (SQLite/Redis) for semantic indexing and entity extraction
 
 This roadmap keeps us focused on clean data, trustworthy retrieval, and incremental automation—the pillars required for Jarvis to graduate into the loyal, always-on advocate envisioned in the Jarvis Vision document.
